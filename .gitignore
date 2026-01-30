@@ -1,0 +1,11 @@
+# Ignore configuration files with secrets
+libs/data/*.json
+!libs/data/*.example.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Output
+output/
+generated_assets/
