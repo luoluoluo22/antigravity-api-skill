@@ -1,6 +1,6 @@
 ---
 name: antigravity-skill
-description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4.5 文本生成, banana生图) 时使用此技能。
+description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4.5 文本生成, banana生图, 视频理解) 时使用此技能。
 ---
 
 # Antigravity Skill
@@ -11,6 +11,8 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
 ## 场景
 - **高级对话**: 使用 Gemini 3 或 Claude 3.7 进行复杂逻辑分析、脚本编写。
 - **高清绘图**: 生成 16:9 4K 质量的视频素材、封面图 (优于普通绘图)。
+- **视频深度理解 (Vid2Text)**: 内置 **FFmpeg 智能压缩引擎**，支持 100MB+ 甚至 500MB+ 的超大视频。自动优化分辨率（480P）以在保留准确时间轴的前提下，实现极速上传与分析。
+- **批量素材处理**: 支持一次性喂入多个视频/图片素材。适用于分析全集剧情、对比视频色彩或批量生成解说词。
 
 ## 环境配置 (Setup)
 
@@ -32,18 +34,30 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
 
 ## 指令
 
-### 1. 高级对话 (Chat)
-**指令**: "请用 Claude 4.5 写一段脚本..."
-- **执行**: `python scripts/chat.py "{Prompt}" "{ModelName}"`
-- **默认模型**: `gemini-3-flash`
-- **可选模型**: `claude-3-7-sonnet`, `gemini-2.0-flash-thinking`
+### 🗣️ 试试这样问 AI
+- **高级写作**: "请用 Claude 4.5 帮我写一个短视频脚本。"
+- **高清绘图**: "用 banana 生成一张 16:9 的赛博朋克城市背景图。"
+- **参考生图**: "参考这张图 [绝对路径]，帮我画一个类似风格的饕餮巨兽。"
+- **视频理解**: "帮帮我分析下这个视频的内容：[视频路径]"
+- **查看模型**: "查看现在有哪些模型可以用。"
+- **推荐模型**: `gemini-3-pro` (视频理解首选), `claude-3-7-sonnet`, `gemini-3-flash`
+
+### 1. 对话与多模态 (Chat & Multimodal)
+**指令**: "请帮我写一段脚本..." / "分析这个视频: [视频路径]"
+- **执行**: `python scripts/chat.py "{Prompt}" "{ModelName}" "{FilePath1}" "{FilePath2}" ...`
+- **能力**: 
+  - 自动识别图片/视频。
+  - **超强压缩**: 内置 FFmpeg，自动优化大视频体积，支持 100MB+ 文件的秒级分析。
+  - **时间对齐**: 压缩过程不损失任何时间戳精度，完美适配“分镜拆解”与“解说打轴”任务。
+  - **建议**: 对于复杂项目，请明确指定使用 `gemini-3-pro`。
 
 ### 2. 高清绘图 (Imagen 3 / banana)
 **指令**: "用 banana 画一张..." / "生成一张 16:9 的高清图..."
-- **执行**: `python scripts/generate_image.py "{Prompt}" "{Size/Ratio}"`
+- **执行**: `python scripts/generate_image.py "{Prompt}" "{Size/Ratio}" "{ReferenceImagePath}"`
 - **参数**:
   - `Prompt`: 描述词
-  - `Size`: 支持 `16:9`, `9:16`, `1:1` 或具体分辨率 `1920x1080`。
+  - `Size`: 支持 `16:9`, `9:16`, `1:1` 等。
+  - `ReferenceImagePath`: (可选) 本地图片绝对路径。如果提供，AI 将参考该图片进行创作。
 
 ### 3. 查看可用模型 (List Models)
 **指令**: "查看所有模型" / "有什么模型可以用"

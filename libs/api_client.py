@@ -3,10 +3,15 @@ import os
 import sys
 from pathlib import Path
 import requests
+import base64
+import mimetypes
+import subprocess
+import tempfile
+import time
 
 # Globally disable proxies to prevent localhost connection issues
 s = requests.Session()
-s.trust_env = True
+s.trust_env = False
 
 
 class AntigravityClient:
@@ -33,10 +38,170 @@ class AntigravityClient:
             print(f"[-] Error parsing config: {e}")
             return {}
 
-    def chat_completion(self, messages, model=None, temperature=0.7):
+    def _optimize_video(self, input_path):
+        """
+        Use FFmpeg to compress large videos to a manageable size for AI.
+        Target: 480P at low bitrate, keeping timing intact.
+        """
+        temp_dir = Path(tempfile.gettempdir()) / "antigravity_cache"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_path = temp_dir / f"optimized_{int(time.time())}_{os.path.basename(input_path)}"
+        
+        print(f"[*] Optimizing video for AI analysis: {os.path.basename(input_path)}...")
+        
+        # FFmpeg command: 
+        # -vf scale=-2:480: Keep aspect ratio, set height to 480p
+        # -crf 32: High compression (lower quality but smaller size)
+        # -preset veryfast: Speed over quality
+        # -c:a aac -b:a 64k: Compress audio
+        cmd = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', 'scale=-2:480',
+            '-vcodec', 'libx264', '-crf', '32', '-preset', 'veryfast',
+            '-acodec', 'aac', '-b:a', '64k',
+            str(output_path)
+        ]
+        
+        try:
+            # Run silently
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            new_size = os.path.getsize(output_path)
+            print(f"[+] Optimization complete: {new_size/1024/1024:.2f}MB")
+            return str(output_path)
+        except Exception as e:
+            print(f"[-] Optimization failed: {e}")
+            return input_path # Fallback to original
+
+    def upload_file(self, file_path):
+        """
+        Stream large files to the server using the /files endpoint.
+        Try multiple formats and endpoints for compatibility.
+        """
+        if not os.path.exists(file_path):
+            return None
+            
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type = mime_type or "application/octet-stream"
+        
+        if file_path.lower().endswith(('.mp4', '.mov', '.webm')):
+            mime_type = mime_type if "video" in mime_type else "video/mp4"
+
+        print(f"[*] Uploading {file_name} ({file_size/1024/1024:.2f}MB)...")
+        
+        # Try a few common endpoints
+        endpoints = [f"{self.base_url}/files"]
+        if "/v1" in self.base_url:
+            endpoints.append(self.base_url.replace("/v1", "") + "/files")
+            endpoints.append(self.base_url.replace("/v1", "/upload/v1") + "/files")
+            endpoints.append(self.base_url.replace("/v1", "/upload/v1beta") + "/files")
+            
+        for url in endpoints:
+            try:
+                # Mode 1: Multipart (Standard OpenAI compatible)
+                with open(file_path, "rb") as f:
+                    files = {
+                        'file': (file_name, f, mime_type),
+                        'purpose': (None, 'fine-tune')
+                    }
+                    headers = {"Authorization": f"Bearer {self.api_key}"}
+                    response = s.post(url, headers=headers, files=files, timeout=600)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    file_uri = result.get("file_uri") or result.get("id") or result.get("uri")
+                    if file_uri:
+                        print(f"[+] Upload success: {file_uri}")
+                        return {"uri": file_uri, "mime_type": mime_type}
+                else:
+                    print(f"[-] Mode 1 failed ({response.status_code}) for {url}: {response.text[:100]}")
+                
+                # Mode 2: Octet-stream
+                with open(file_path, "rb") as f:
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "X-File-Name": file_name,
+                        "X-File-Type": mime_type,
+                        "Content-Type": "application/octet-stream"
+                    }
+                    response = s.post(url, headers=headers, data=f, timeout=600)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    file_uri = result.get("file_uri") or result.get("uri")
+                    if file_uri:
+                        print(f"[+] Upload success: {file_uri}")
+                        return {"uri": file_uri, "mime_type": mime_type}
+                else:
+                    print(f"[-] Mode 2 failed ({response.status_code}) for {url}: {response.text[:100]}")
+                        
+            except Exception as e:
+                print(f"[-] Attempt failed for {url}: {e}")
+                
+        return None
+
+    def chat_completion(self, messages, model=None, temperature=0.7, file_paths=None, file_path=None):
         url = f"{self.base_url}/chat/completions"
         model = model or self.config.get("default_chat_model", "claude-sonnet-4-5")
         
+        paths = []
+        if file_path: paths.append(file_path)
+        if file_paths:
+            if isinstance(file_paths, list): paths.extend(file_paths)
+            else: paths.append(file_paths)
+            
+        multimodal_content = []
+        
+        for path in paths:
+            if not os.path.exists(path): continue
+            
+            # Smart optimization: if it's a video and > 20MB, compress it first
+            is_video = path.lower().endswith(('.mp4', '.mov', '.webm'))
+            file_size = os.path.getsize(path)
+            
+            working_path = path
+            is_temp = False
+            if is_video and file_size > 20 * 1024 * 1024:
+                working_path = self._optimize_video(path)
+                is_temp = (working_path != path)
+            
+            new_size = os.path.getsize(working_path)
+            
+            # Now use File API for the optimized file if it's still > 5MB
+            if new_size > 5 * 1024 * 1024:
+                file_info = self.upload_file(working_path)
+                if file_info:
+                    multimodal_content.append({
+                        "type": "file_url",
+                        "file_url": {"url": file_info["uri"], "mime_type": file_info["mime_type"]}
+                    })
+                    if is_temp: os.remove(working_path)
+                    continue
+            
+            # Final fallback to Base64
+            try:
+                mime_type, _ = mimetypes.guess_type(working_path)
+                mime_type = mime_type or "application/octet-stream"
+                if is_video: mime_type = mime_type if "video" in mime_type else "video/mp4"
+                
+                print(f"[*] Encoding media: {os.path.basename(working_path)}")
+                b64_data = base64.b64encode(open(working_path, "rb").read()).decode("utf-8")
+                multimodal_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
+                })
+                if is_temp: os.remove(working_path)
+            except Exception as e:
+                print(f"[-] Failed to process {path}: {e}")
+
+        if multimodal_content and messages and messages[-1]['role'] == 'user':
+            original_text = messages[-1]['content']
+            new_content = [{"type": "text", "text": original_text}] if isinstance(original_text, str) else original_text
+            new_content.extend(multimodal_content)
+            messages[-1]['content'] = new_content
+
         payload = {
             "model": model,
             "messages": messages,
@@ -44,7 +209,6 @@ class AntigravityClient:
             "stream": True
         }
         
-        # Mimic the working script's headers, plus a compliant User-Agent just in case
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -52,24 +216,47 @@ class AntigravityClient:
         }
         
         try:
-            # Using standard requests with stream=True
-            response = s.post(url, headers=headers, json=payload, stream=True, timeout=60)
+            response = s.post(url, headers=headers, json=payload, stream=True, timeout=300) 
             return response
         except Exception as e:
             print(f"[-] Request failed: {e}")
             return None
 
-    def generate_image(self, prompt, size="1024x1024", quality="standard", n=1):
-        url = f"{self.base_url}/images/generations"
+    def generate_image(self, prompt, size="1024x1024", image_path=None, quality="standard", n=1):
+        # According to the provided SDK, images are generated via the /chat/completions endpoint
+        url = f"{self.base_url}/chat/completions"
         model = self.config.get("default_image_model", "gemini-3-pro-image")
         
+        messages = []
+        if image_path and os.path.exists(image_path):
+            print(f"[*] Encoding reference image: {image_path}")
+            try:
+                mime_type, _ = mimetypes.guess_type(image_path)
+                mime_type = mime_type or "image/png"
+                img_data = base64.b64encode(open(image_path, "rb").read()).decode("utf-8")
+                
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{img_data}"}
+                        }
+                    ]
+                })
+            except Exception as e:
+                print(f"[-] Failed to read image: {e}")
+                messages.append({"role": "user", "content": prompt})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        # Mapping size for the chat endpoint structure
         payload = {
             "model": model,
-            "prompt": prompt,
-            "size": size,
-            "quality": quality,
-            "n": n,
-            "response_format": "b64_json"
+            "messages": messages,
+            "size": size, # Using extra_body logic as top level for simplicity in REST
+            "stream": False # Getting full response usually contains the URL/Image Markdown
         }
         
         headers = {
@@ -78,7 +265,7 @@ class AntigravityClient:
             "User-Agent": "Antigravity/4.0.6"
         }
         
-        print(f"[*] Sending Image Request to {model}...")
+        print(f"[*] Sending Image Request via Chat API to {model}...")
         try:
             response = s.post(url, headers=headers, json=payload, timeout=120)
             if response.status_code == 200:

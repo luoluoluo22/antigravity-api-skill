@@ -16,11 +16,21 @@ except ImportError:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python chat.py \"Your prompt here\" [model_name]")
+        print("Usage: python chat.py \"Your prompt here\" [model_name] [media_path]")
         return
 
     prompt = sys.argv[1]
-    model = sys.argv[2] if len(sys.argv) > 2 else None
+    # Try to find file path in args
+    media_paths = []
+    # Collect all existing file paths from arguments
+    for arg in sys.argv[2:]:
+        if os.path.exists(arg):
+            media_paths.append(arg)
+            
+    # Set model if it was provided and isn't a file path
+    model = None
+    if len(sys.argv) > 2 and not os.path.exists(sys.argv[2]):
+        model = sys.argv[2]
     
     client = AntigravityClient()
     
@@ -28,9 +38,11 @@ def main():
     
     print(f"[*] Asking {model or client.config.get('default_chat_model')}...")
     
-    response = client.chat_completion(messages, model=model)
+    response = client.chat_completion(messages, model=model, file_paths=media_paths)
     
-    if not response:
+    if not response or response.status_code != 200:
+        if response:
+            print(f"[-] AI Request failed ({response.status_code}): {response.text}")
         return
 
     full_content = ""

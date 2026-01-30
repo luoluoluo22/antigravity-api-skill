@@ -2,6 +2,8 @@ import sys
 import os
 import time
 import base64
+import re
+import requests
 from pathlib import Path
 
 # Add libs to path
@@ -17,46 +19,72 @@ except ImportError:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python generate_image.py \"Prompt\" [size]")
-        print("Examples: python generate_image.py \"A cat\" \"16:9\"")
+        print("Usage: python generate_image.py \"Prompt\" [size] [image_path]")
         return
 
     prompt = sys.argv[1]
-    # Handle simple aspect ratios mapped to approximate pixels if needed, 
-    # but Antigravity docs say it handles 16:9 string directly? 
-    # Wait, docs say: "size": "1920x1080" maps to 16:9. 
-    # Docs also say: "gemini-3-pro-image-16-9-4k" model suffix.
-    # Let's support both raw size and intelligent mapping.
-    
     size_arg = sys.argv[2] if len(sys.argv) > 2 else "1024x1024"
+    image_path = sys.argv[3] if len(sys.argv) > 3 else None
     
-    # Simple mapping if user provides ratio
     ratio_map = {
-        "16:9": "1920x1080",
-        "9:16": "1080x1920", 
-        "4:3": "1024x768",
+        "16:9": "1280x720",
+        "9:16": "720x1280", 
         "1:1": "1024x1024"
     }
     
     target_size = ratio_map.get(size_arg, size_arg)
     
     client = AntigravityClient()
+    res = client.generate_image(prompt, size=target_size, image_path=image_path)
     
-    res = client.generate_image(prompt, size=target_size, quality="hd")
-    
-    if res and "data" in res:
-        # Save images
+    if res and "choices" in res:
+        content = res["choices"][0].get("message", {}).get("content", "")
+        print(f"[*] Response content received (Length: {len(content)})")
+        
         save_dir = Path(os.getcwd()) / "generated_assets"
         save_dir.mkdir(parents=True, exist_ok=True)
-        
-        for i, item in enumerate(res["data"]):
-            b64 = item.get("b64_json")
-            if b64:
-                img_data = base64.b64decode(b64)
-                fname = f"antigravity_{int(time.time())}_{i}.png"
-                save_path = save_dir / fname
-                save_path.write_bytes(img_data)
-                print(f"[+] Image saved: {save_path}")
+        saved_any = False
+
+        # 1. Look for plain URLs
+        urls = re.findall(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", content)
+        if urls:
+            for i, url in enumerate(urls):
+                try:
+                    print(f"[*] Downloading image from {url}...")
+                    img_resp = requests.get(url, timeout=30)
+                    if img_resp.status_code == 200:
+                        fname = f"antigravity_{int(time.time())}_url_{i}.png"
+                        save_path = save_dir / fname
+                        save_path.write_bytes(img_resp.content)
+                        print(f"[+] Image saved: {save_path}")
+                        saved_any = True
+                except Exception as e:
+                    print(f"[-] Download failed: {e}")
+
+        # 2. Look for Base64 Data (common in Markdown or raw)
+        # Pattern: data:image/png;base64,xxxx or just long base64 string inside parentheses
+        b64_matches = re.findall(r"data:image\/[a-zA-Z]+;base64,([a-zA-Z0-9+/=]+)", content)
+        if not b64_matches:
+            # Try to find base64-like blobs in Markdown image syntax ![alt](data:...)
+            b64_matches = re.findall(r"base64,([a-zA-Z0-9+/=]{100,})", content)
+
+        if b64_matches:
+            for i, b64_str in enumerate(b64_matches):
+                try:
+                    print(f"[*] Decoding Base64 image {i}...")
+                    img_data = base64.b64decode(b64_str)
+                    fname = f"antigravity_{int(time.time())}_b64_{i}.png"
+                    save_path = save_dir / fname
+                    save_path.write_bytes(img_data)
+                    print(f"[+] Image saved: {save_path}")
+                    saved_any = True
+                except Exception as e:
+                    print(f"[-] Base64 decode failed: {e}")
+
+        if not saved_any:
+            print("[-] No image URL or Base64 data found in response")
+            if len(content) > 200:
+                print(f"[*] Content snippet: {content[:200]}...")
     else:
         print("[-] Generation failed")
 
