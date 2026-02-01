@@ -21,7 +21,7 @@ class AntigravityClient:
         self.api_key = self.config.get("api_key", "")
         
         if not self.base_url or not self.api_key:
-            print("[-] Error: Configuration missing base_url or api_key")
+            print("[-] Error: Configuration missing base_url or api_key", file=sys.stderr)
             sys.exit(1)
             
     def _load_config(self):
@@ -29,13 +29,13 @@ class AntigravityClient:
         config_path = current_dir / "data" / "config.json"
         
         if not config_path.exists():
-            print(f"[-] Config not found at {config_path}")
+            print(f"[-] Config not found at {config_path}", file=sys.stderr)
             return {}
             
         try:
             return json.loads(config_path.read_text(encoding='utf-8'))
         except Exception as e:
-            print(f"[-] Error parsing config: {e}")
+            print(f"[-] Error parsing config: {e}", file=sys.stderr)
             return {}
 
     def _optimize_video(self, input_path):
@@ -54,10 +54,10 @@ class AntigravityClient:
         output_path = cache_dir / f"optimized_{mtime}_{safe_name}"
         
         if output_path.exists() and output_path.stat().st_size > 0:
-            print(f"[*] Using cached optimized video: {output_path}")
+            print(f"[*] Using cached optimized video: {output_path}", file=sys.stderr)
             return str(output_path)
         
-        print(f"[*] Optimizing video for AI analysis: {os.path.basename(input_path)}...")
+        print(f"[*] Optimizing video for AI analysis: {os.path.basename(input_path)}...", file=sys.stderr)
         
         # FFmpeg command optimized for extreme compression + GPU (if available)
         # Try to use NVIDIA GPU (h264_nvenc) first, fallback to CPU (libx264)
@@ -91,30 +91,35 @@ class AntigravityClient:
         ]
 
         try:
-            print(f"[*] Starting Smart Compression (Target: 360p@5fps)...")
+            print(f"[*] Starting Smart Compression (Target: 360p@5fps)...", file=sys.stderr)
             
             # Try GPU first
             try:
-                print(f"[*] Attempting GPU acceleration (h264_nvenc)...")
-                # Need to remove filter from GPU command if complex filters aren't supported with hwaccel in this build
-                # Using a simpler GPU command for stability
+                print(f"[*] Attempting GPU acceleration (h264_nvenc) at 2fps...", file=sys.stderr)
                 simple_gpu_cmd = [
                     'ffmpeg', '-y', '-i', input_path,
-                    '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '35',
-                    '-vf', 'scale=-2:360,fps=5', 
+                    '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '40',
+                    '-vf', 'scale=-2:360,fps=2', 
                     '-an',
                     str(output_path)
                 ]
                 subprocess.run(simple_gpu_cmd, stdout=subprocess.DEVNULL, check=True)
             except Exception as e:
-                print(f"[-] GPU failed, switching to CPU: {e}")
-                subprocess.run(cmd_cpu, stdout=subprocess.DEVNULL, check=True)
+                print(f"[-] GPU failed, switching to CPU (2fps ultra-compression): {e}", file=sys.stderr)
+                cmd_cpu_ultra = [
+                    'ffmpeg', '-y', '-i', input_path,
+                    '-vf', 'scale=-2:360,fps=2',
+                    '-vcodec', 'libx264', '-crf', '40', '-preset', 'ultrafast',
+                    '-an',
+                    str(output_path)
+                ]
+                subprocess.run(cmd_cpu_ultra, stdout=subprocess.DEVNULL, check=True)
             
             new_size = os.path.getsize(output_path)
-            print(f"[+] Optimization complete: {new_size/1024/1024:.2f}MB")
+            print(f"[+] Optimization complete: {new_size/1024/1024:.2f}MB", file=sys.stderr)
             return str(output_path)
         except Exception as e:
-            print(f"[-] Optimization failed: {e}")
+            print(f"[-] Optimization failed: {e}", file=sys.stderr)
             return input_path # Fallback to original
 
     def upload_file(self, file_path):
@@ -133,7 +138,7 @@ class AntigravityClient:
         if file_path.lower().endswith(('.mp4', '.mov', '.webm')):
             mime_type = mime_type if "video" in mime_type else "video/mp4"
 
-        print(f"[*] Uploading {file_name} ({file_size/1024/1024:.2f}MB)...")
+        print(f"[*] Uploading {file_name} ({file_size/1024/1024:.2f}MB)...", file=sys.stderr)
         
         # Try a few common endpoints
         endpoints = [f"{self.base_url}/files"]
@@ -160,7 +165,7 @@ class AntigravityClient:
                         print(f"[+] Upload success: {file_uri}")
                         return {"uri": file_uri, "mime_type": mime_type}
                 else:
-                    print(f"[-] Mode 1 failed ({response.status_code}) for {url}: {response.text[:100]}")
+                    print(f"[-] Mode 1 failed ({response.status_code}) for {url}: {response.text[:100]}", file=sys.stderr)
                 
                 # Mode 2: Octet-stream
                 with open(file_path, "rb") as f:
@@ -179,10 +184,10 @@ class AntigravityClient:
                         print(f"[+] Upload success: {file_uri}")
                         return {"uri": file_uri, "mime_type": mime_type}
                 else:
-                    print(f"[-] Mode 2 failed ({response.status_code}) for {url}: {response.text[:100]}")
+                    print(f"[-] Mode 2 failed ({response.status_code}) for {url}: {response.text[:100]}", file=sys.stderr)
                         
             except Exception as e:
-                print(f"[-] Attempt failed for {url}: {e}")
+                print(f"[-] Attempt failed for {url}: {e}", file=sys.stderr)
                 
         return None
 
@@ -201,45 +206,30 @@ class AntigravityClient:
         for path in paths:
             if not os.path.exists(path): continue
             
-            # Smart optimization: if it's a video and > 20MB, compress it first
+            # Smart optimization: if it's a video and > 10MB, compress it first
             is_video = path.lower().endswith(('.mp4', '.mov', '.webm'))
             file_size = os.path.getsize(path)
             
             working_path = path
-            is_temp = False
-            if is_video and file_size > 20 * 1024 * 1024:
+            if is_video and file_size > 10 * 1024 * 1024:
                 working_path = self._optimize_video(path)
-                # Keep cache files, don't delete them
-                is_temp = False 
             
-            new_size = os.path.getsize(working_path)
-            
-            # Now use File API for the optimized file if it's still > 5MB
-            if new_size > 5 * 1024 * 1024:
-                file_info = self.upload_file(working_path)
-                if file_info:
-                    multimodal_content.append({
-                        "type": "file_url",
-                        "file_url": {"url": file_info["uri"], "mime_type": file_info["mime_type"]}
-                    })
-                    # if is_temp: os.remove(working_path) # Disabled deletion for cache reuse
-                    continue
-            
-            # Final fallback to Base64
+            # All media sent via Base64 for maximum compatibility
             try:
                 mime_type, _ = mimetypes.guess_type(working_path)
                 mime_type = mime_type or "application/octet-stream"
-                if is_video: mime_type = mime_type if "video" in mime_type else "video/mp4"
+                if is_video: mime_type = "video/mp4" # Ensure video mime type
                 
-                print(f"[*] Encoding media: {os.path.basename(working_path)}")
-                b64_data = base64.b64encode(open(working_path, "rb").read()).decode("utf-8")
+                print(f"[*] Encoding media (Base64): {os.path.basename(working_path)}", file=sys.stderr)
+                with open(working_path, "rb") as f:
+                    b64_data = base64.b64encode(f.read()).decode("utf-8")
+                
                 multimodal_content.append({
                     "type": "image_url",
                     "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
                 })
-                # if is_temp: os.remove(working_path) # Disabled deletion for cache reuse
             except Exception as e:
-                print(f"[-] Failed to process {path}: {e}")
+                print(f"[-] Failed to process {path}: {e}", file=sys.stderr)
 
         if multimodal_content and messages and messages[-1]['role'] == 'user':
             original_text = messages[-1]['content']
@@ -261,10 +251,13 @@ class AntigravityClient:
         }
         
         try:
-            response = s.post(url, headers=headers, json=payload, stream=True, timeout=300) 
+            print(f"[*] Sending Payload ({len(json.dumps(payload))/1024/1024:.1f}MB) to {url}...", file=sys.stderr)
+            print("[*] Please wait, this may take a minute for large videos...", file=sys.stderr)
+            response = s.post(url, headers=headers, json=payload, stream=True, timeout=900) 
+            print(f"[*] Response received: {response.status_code}", file=sys.stderr)
             return response
         except Exception as e:
-            print(f"[-] Request failed: {e}")
+            print(f"[-] Request failed: {e}", file=sys.stderr)
             return None
 
     def generate_image(self, prompt, size="1024x1024", image_path=None, quality="standard", n=1):
@@ -274,7 +267,7 @@ class AntigravityClient:
         
         messages = []
         if image_path and os.path.exists(image_path):
-            print(f"[*] Encoding reference image: {image_path}")
+            print(f"[*] Encoding reference image: {image_path}", file=sys.stderr)
             try:
                 mime_type, _ = mimetypes.guess_type(image_path)
                 mime_type = mime_type or "image/png"
@@ -291,7 +284,7 @@ class AntigravityClient:
                     ]
                 })
             except Exception as e:
-                print(f"[-] Failed to read image: {e}")
+                print(f"[-] Failed to read image: {e}", file=sys.stderr)
                 messages.append({"role": "user", "content": prompt})
         else:
             messages.append({"role": "user", "content": prompt})
@@ -310,7 +303,7 @@ class AntigravityClient:
             "User-Agent": "Antigravity/4.0.6"
         }
         
-        print(f"[*] Sending Image Request via Chat API to {model}...")
+        print(f"[*] Sending Image Request via Chat API to {model}...", file=sys.stderr)
         try:
             response = s.post(url, headers=headers, json=payload, timeout=120)
             if response.status_code == 200:
@@ -319,7 +312,7 @@ class AntigravityClient:
                 print(f"[-] API Error {response.status_code}: {response.text}")
                 return None
         except Exception as e:
-            print(f"[-] Image Request failed: {e}")
+            print(f"[-] Image Request failed: {e}", file=sys.stderr)
             return None
 
     def get_models(self):
@@ -343,5 +336,5 @@ class AntigravityClient:
                 print(f"[-] API Error {response.status_code}: {response.text}")
                 return []
         except Exception as e:
-            print(f"[-] Models Request failed: {e}")
+            print(f"[-] Models Request failed: {e}", file=sys.stderr)
             return []

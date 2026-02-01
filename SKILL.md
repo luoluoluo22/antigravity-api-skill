@@ -1,6 +1,6 @@
 ---
 name: antigravity-skill
-description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4.5 文本生成, banana生图, 视频理解) 时使用此技能。
+description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4.5 文本生成, banana生图, 视频分析理解) 时使用此技能。
 ---
 
 # Antigravity Skill
@@ -24,9 +24,9 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
     *   安装并启动 Windows 客户端。
 
 2.  **配置连接**:
-    *   确保本地服务已启动 (默认端口 `:8045`)。
-    *   配置文件位于 `libs/data/config.json`。
-    *   **Base URL**: `http://127.0.0.1:8045/v1`
+    *   确保本地服务已启动 (默认端口 `:8045` 或 `:8090`)。
+    *   **核心配置**: 配置文件位于 `libs/data/config.json`，脚本会自动读取此处的端口与 Key。
+    *   **Base URL**: `http://127.0.0.1:8090/v1` (如果修改过端口，请保持 config.json 一致)
     *   **API Key**: `sk-antigravity` (默认) 或您自己在客户端设置的 Key。
 
 3.  **验证连接**:
@@ -40,7 +40,7 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
 - **参考生图**: "参考这张图 [绝对路径]，帮我画一个类似风格的饕餮巨兽。"
 - **视频理解**: "帮帮我分析下这个视频的内容：[视频路径]"
 - **查看模型**: "查看现在有哪些模型可以用。"
-- **推荐模型**: `gemini-3-pro` (视频理解首选), `claude-3-7-sonnet`, `gemini-3-flash`
+- **推荐模型**: `gemini-3-pro` (视频理解首选), `gemini-3-flash`
 
 ### 1. 对话与多模态 (Chat & Multimodal)
 **指令**: "请帮我写一段脚本..." / "分析这个视频: [视频路径]"
@@ -50,6 +50,11 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
   - **超强压缩**: 内置 FFmpeg，自动优化大视频体积，支持 100MB+ 文件的秒级分析。
   - **时间对齐**: 压缩过程不损失任何时间戳精度，完美适配“分镜拆解”与“解说打轴”任务。
   - **建议**: 对于复杂项目，请明确指定使用 `gemini-3-pro`。
+
+### 2. 专用视频分析 (Deep Video Analysis)
+**指令**: "分析视频分镜: [视频路径]" / "拆解这个视频: [视频路径]"
+- **执行**: `python scripts/video_analyzer.py "{VideoPath}"`
+- **优势**: 自动从 `config.json` 加载端口，默认使用最强的 `gemini-3-pro` 模型，预设专业分镜分析 Prompt，输出格式规整。
 
 ### 2. 高清绘图 (Imagen 3 / banana)
 **指令**: "用 banana 画一张..." / "生成一张 16:9 的高清图..."
