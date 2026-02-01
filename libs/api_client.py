@@ -41,31 +41,75 @@ class AntigravityClient:
     def _optimize_video(self, input_path):
         """
         Use FFmpeg to compress large videos to a manageable size for AI.
-        Target: 480P at low bitrate, keeping timing intact.
+        Target: 360P at low bitrate, keeping timing intact.
+        Saves to ./antigravity_cache to Allow reuse.
         """
-        temp_dir = Path(tempfile.gettempdir()) / "antigravity_cache"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Save to current working directory cache instead of temp
+        cache_dir = Path("video_cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
         
-        output_path = temp_dir / f"optimized_{int(time.time())}_{os.path.basename(input_path)}"
+        # Consistent naming for caching based on modification time and name
+        mtime = int(os.path.getmtime(input_path))
+        safe_name = os.path.basename(input_path).replace(" ", "_")
+        output_path = cache_dir / f"optimized_{mtime}_{safe_name}"
+        
+        if output_path.exists() and output_path.stat().st_size > 0:
+            print(f"[*] Using cached optimized video: {output_path}")
+            return str(output_path)
         
         print(f"[*] Optimizing video for AI analysis: {os.path.basename(input_path)}...")
         
-        # FFmpeg command: 
-        # -vf scale=-2:480: Keep aspect ratio, set height to 480p
-        # -crf 32: High compression (lower quality but smaller size)
-        # -preset veryfast: Speed over quality
-        # -c:a aac -b:a 64k: Compress audio
-        cmd = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', 'scale=-2:480',
-            '-vcodec', 'libx264', '-crf', '32', '-preset', 'veryfast',
-            '-acodec', 'aac', '-b:a', '64k',
+        # FFmpeg command optimized for extreme compression + GPU (if available)
+        # Try to use NVIDIA GPU (h264_nvenc) first, fallback to CPU (libx264)
+        
+        common_filters = [
+            '-vf', 'scale=-2:360,fps=5', # Downscale to 360p, reduce FPS to 5
+            '-an', # Remove audio completely (optional: keep if audio analysis needed, but -an saves size)
+        ]
+        
+        # GPU Command (NVIDIA)
+        cmd_gpu = [
+            'ffmpeg', '-y', 
+            '-hwaccel', 'cuda', 
+            '-hwaccel_output_format', 'cuda',
+            '-i', input_path,
+            '-c:v', 'h264_nvenc', # Use NVIDIA Encoder
+            '-preset', 'p1',      # Fastest preset
+            '-qp', '35',          # Quality parameter (higher = lower quality)
+            '-vf', 'scale_cuda=-2:360,fps=5', # CUDA-accelerated scaling
+            '-an', 
             str(output_path)
         ]
         
+        # CPU Command (Fallback)
+        cmd_cpu = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', 'scale=-2:360,fps=5',
+            '-vcodec', 'libx264', '-crf', '35', '-preset', 'ultrafast',
+            '-an', # Removing audio for visual analysis tasks to save huge space
+            str(output_path)
+        ]
+
         try:
-            # Run silently
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            print(f"[*] Starting Smart Compression (Target: 360p@5fps)...")
+            
+            # Try GPU first
+            try:
+                print(f"[*] Attempting GPU acceleration (h264_nvenc)...")
+                # Need to remove filter from GPU command if complex filters aren't supported with hwaccel in this build
+                # Using a simpler GPU command for stability
+                simple_gpu_cmd = [
+                    'ffmpeg', '-y', '-i', input_path,
+                    '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '35',
+                    '-vf', 'scale=-2:360,fps=5', 
+                    '-an',
+                    str(output_path)
+                ]
+                subprocess.run(simple_gpu_cmd, stdout=subprocess.DEVNULL, check=True)
+            except Exception as e:
+                print(f"[-] GPU failed, switching to CPU: {e}")
+                subprocess.run(cmd_cpu, stdout=subprocess.DEVNULL, check=True)
+            
             new_size = os.path.getsize(output_path)
             print(f"[+] Optimization complete: {new_size/1024/1024:.2f}MB")
             return str(output_path)
@@ -165,7 +209,8 @@ class AntigravityClient:
             is_temp = False
             if is_video and file_size > 20 * 1024 * 1024:
                 working_path = self._optimize_video(path)
-                is_temp = (working_path != path)
+                # Keep cache files, don't delete them
+                is_temp = False 
             
             new_size = os.path.getsize(working_path)
             
@@ -177,7 +222,7 @@ class AntigravityClient:
                         "type": "file_url",
                         "file_url": {"url": file_info["uri"], "mime_type": file_info["mime_type"]}
                     })
-                    if is_temp: os.remove(working_path)
+                    # if is_temp: os.remove(working_path) # Disabled deletion for cache reuse
                     continue
             
             # Final fallback to Base64
@@ -192,7 +237,7 @@ class AntigravityClient:
                     "type": "image_url",
                     "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
                 })
-                if is_temp: os.remove(working_path)
+                # if is_temp: os.remove(working_path) # Disabled deletion for cache reuse
             except Exception as e:
                 print(f"[-] Failed to process {path}: {e}")
 
