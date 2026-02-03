@@ -233,9 +233,16 @@ class AntigravityClient:
 
         if multimodal_content and messages and messages[-1]['role'] == 'user':
             original_text = messages[-1]['content']
-            new_content = [{"type": "text", "text": original_text}] if isinstance(original_text, str) else original_text
-            new_content.extend(multimodal_content)
-            messages[-1]['content'] = new_content
+            # Avoid nesting if it's already a list from a previous attempt
+            if isinstance(original_text, list):
+                # Check if it already has multimodal items to avoid duplicates
+                existing_types = [item.get("type") for item in original_text if isinstance(item, dict)]
+                if "image_url" not in existing_types:
+                    original_text.extend(multimodal_content)
+            else:
+                new_content = [{"type": "text", "text": original_text}]
+                new_content.extend(multimodal_content)
+                messages[-1]['content'] = new_content
 
         payload = {
             "model": model,
@@ -254,6 +261,14 @@ class AntigravityClient:
             print(f"[*] Sending Payload ({len(json.dumps(payload))/1024/1024:.1f}MB) to {url}...", file=sys.stderr)
             print("[*] Please wait, this may take a minute for large videos...", file=sys.stderr)
             response = s.post(url, headers=headers, json=payload, stream=True, timeout=900) 
+            
+            # --- 自动降级逻辑 (Fallback) ---
+            # 如果请求的是 gemini-3-pro 且返回 503 (账号故障/负载过高)
+            if response.status_code == 503 and model == "gemini-3-pro":
+                print(f"[!] gemini-3-pro 返回 503 (繁忙/账号故障)，正在自动切换到 gemini-3-flash 进行重试...", file=sys.stderr)
+                payload["model"] = "gemini-3-flash"
+                response = s.post(url, headers=headers, json=payload, stream=True, timeout=900)
+            
             print(f"[*] Response received: {response.status_code}", file=sys.stderr)
             return response
         except Exception as e:
