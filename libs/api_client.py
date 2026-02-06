@@ -25,12 +25,33 @@ class AntigravityClient:
             sys.exit(1)
             
     def _load_config(self):
+        # [Fix] 支持 PyInstaller 打包后的路径
+        if getattr(sys, 'frozen', False):
+            # 1. 优先读取 EXE 同级目录下的 data/config.json (用户可配置)
+            exe_dir = Path(sys.executable).parent
+            user_config = exe_dir / "data" / "config.json"
+            if user_config.exists():
+                try: 
+                    return json.loads(user_config.read_text(encoding='utf-8'))
+                except: pass
+            
+            # 2. 读取内部打包的资源 (如果配置了 _MEIPASS)
+            internal_config = Path(sys._MEIPASS) / "data" / "config.json"
+            if internal_config.exists():
+                try: return json.loads(internal_config.read_text(encoding='utf-8'))
+                except: pass
+
         current_dir = Path(__file__).parent
         config_path = current_dir / "data" / "config.json"
         
         if not config_path.exists():
-            print(f"[-] Config not found at {config_path}", file=sys.stderr)
-            return {}
+            # 尝试在当前工作目录找
+            cwd_config = Path.cwd() / "data" / "config.json"
+            if cwd_config.exists():
+                config_path = cwd_config
+            else:
+                print(f"[-] Config not found at {config_path}", file=sys.stderr)
+                return {}
             
         try:
             return json.loads(config_path.read_text(encoding='utf-8'))
@@ -95,21 +116,21 @@ class AntigravityClient:
             
             # Try GPU first
             try:
-                print(f"[*] Attempting GPU acceleration (h264_nvenc) at 2fps...", file=sys.stderr)
+                print(f"[*] Attempting GPU acceleration (h264_nvenc) at 10fps...", file=sys.stderr)
                 simple_gpu_cmd = [
                     'ffmpeg', '-y', '-i', input_path,
-                    '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '40',
-                    '-vf', 'scale=-2:360,fps=2', 
+                    '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '38',
+                    '-vf', 'scale=-2:360,fps=10', 
                     '-an',
                     str(output_path)
                 ]
                 subprocess.run(simple_gpu_cmd, stdout=subprocess.DEVNULL, check=True)
             except Exception as e:
-                print(f"[-] GPU failed, switching to CPU (2fps ultra-compression): {e}", file=sys.stderr)
+                print(f"[-] GPU failed, switching to CPU (10fps compression): {e}", file=sys.stderr)
                 cmd_cpu_ultra = [
                     'ffmpeg', '-y', '-i', input_path,
-                    '-vf', 'scale=-2:360,fps=2',
-                    '-vcodec', 'libx264', '-crf', '40', '-preset', 'ultrafast',
+                    '-vf', 'scale=-2:360,fps=10',
+                    '-vcodec', 'libx264', '-crf', '35', '-preset', 'ultrafast',
                     '-an',
                     str(output_path)
                 ]
