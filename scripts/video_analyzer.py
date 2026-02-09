@@ -34,8 +34,8 @@ def analyze_video(video_path, custom_prompt=None):
     prompt = custom_prompt or default_prompt
     
     # 3. 指定最适合视频分析的模型
-    # 优先使用 gemini-3-pro，它在处理视频时间轴时最准确
-    model = "gemini-3-pro" 
+    # 优先使用 gemini-3-flash
+    model = "gemini-3-flash"
     
     print(f"[*] 正在分析视频: {os.path.basename(video_path)}", file=sys.stderr)
     print(f"[*] 正在请求模型: {model} (连接地址: {client.base_url})", file=sys.stderr)
