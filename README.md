@@ -1,6 +1,6 @@
 # Antigravity API Skill (高级 AI 调度)
 
-本技能通过集成 [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) 为 Agent 提供顶级 AI 模型支持，包括 Claude 3.7/4.5、Gemini 2.0/3 以及 Imagen 3 高清生图。
+本技能通过集成 [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager/releases) 为 Agent 提供顶级 AI 模型支持，包括 Claude 3.7/4.5、Gemini 2.0/3 以及 Imagen 3 高清生图。
 
 ## 🌟 核心能力
 - **高级对话**: 默认使用 `gemini-3-flash`，支持切换至 `claude-sonnet-4-5` 或 `gemini-3-pro-high`。
@@ -19,12 +19,14 @@ git clone https://github.com/luoluoluo22/antigravity-api-skill.git .agent/skills
 ```
 
 ### 2. 准备环境
-*   下载并运行 [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)。
-*   在 Manager 中配置好您的 API 账号。
+*   下载并运行 [Antigravity Tools](https://github.com/lbjlaq/Antigravity-Manager/releases)，并启动服务。
+*   **重要**：使用 Antigravity Tools 登录您的 **Google Pro** 账号。
+    *   *提示*：Google Pro 账号可以在闲鱼购买，费用约为 80 元/年。
+*   在 Manager 中授权登录好您的 Google Pro 账号。
 
 ### 3. 配置插件
 *   进入本目录 `libs/data/`。
-*   如果不存在 `config.json`，请复制 `config.example.json` 并重命名。
+*   请复制 `config.example.json` 并重命名`config.json`。
 *   **默认配置**:
     *   `base_url`: `http://127.0.0.1:8045/v1`
     *   `api_key`: `sk-antigravity`
@@ -49,3 +51,65 @@ git clone https://github.com/luoluoluo22/antigravity-api-skill.git .agent/skills
 - `scripts/`: 核心执行脚本 (Chat, Image, List)。
 - `libs/`: API 客户端封装。
 - `generated_assets/`: 默认图片输出路径。
+
+---
+
+## ❓ 常见问题排查 (Troubleshooting)
+
+### 1. 连接失败 (Connection Refused / WinError 10061)
+*   **现象**: 报错 `Failed to establish a new connection`。
+*   **解决方法**:
+    1. 确保 **Antigravity-Manager** 已经启动。
+    2. 检查 Manager 界面上的“启动服务”按钮是否已点击。
+    3. 确认 Manager 中是否已成功授权登录 Google Pro 账号。
+
+### 2. 端口冲突或无法连接 (HTTP 502 / 端口无响应)
+*   **现象**: 默认端口 `8045` 无法使用，但更换端口（如 `8090`）后正常。
+*   **解决方法**:
+    1. 检查 Manager 设置中的“监听端口”是否与 `libs/data/config.json` 中的端口一致。
+    2. 如果 `8045` 被占用，请在 Manager 中修改端口为 `8090` 或其他空闲端口。
+    3. **同步配置**: 记得同步修改 `libs/data/config.json` 中的 `base_url` 地址。
+
+### 3. API 请求返回 502 (Internal Server Error)
+*   **现象**: 网关已连接，但后端 Google 服务无响应。
+*   **解决方法**:
+    1. 检查本地网络是否可以正常访问 Google 服务。
+    2. 在 Manager 中尝试“停止服务”并重新“启动服务”。
+    3. 确认 Google Pro 账号未过期。
+
+---
+
+## 🤖 支持的模型列表 (Supported Models)
+
+当前支持以下 69 个模型：
+
+### 💬 对话与文本模型 (Chat / Text)
+- **Claude 系列**:
+  - `claude-sonnet-4-5-20250929` (Sonnet 4.5)
+  - `claude-sonnet-4-5-thinking` (思维链)
+  - `claude-opus-4-5-20251101`
+  - `claude-3-5-sonnet-20241022` (v2)
+  - `claude-3-5-sonnet-20240620` (v1)
+  - `claude-3-haiku-20240307` / `claude-haiku-4`
+- **Gemini 系列**:
+  - `gemini-3-flash` (速度最快，默认)
+  - `gemini-3-pro` / `gemini-3-pro-high` (高精度)
+  - `gemini-2.5-flash-thinking` (强逻辑)
+  - `gemini-2.0-flash-exp`
+- **OpenAI 系列**:
+  - `gpt-4o` / `gpt-4o-mini`
+  - `gpt-4-turbo` / `gpt-4-turbo-preview`
+  - `gpt-3.5-turbo`
+  - `gpt-5-mini`
+
+### 🎨 图像与视觉模型 (Image / Vision)
+支持多种分辨率与比例的 **Imagen 3 (banana)** 模型：
+- **高清 4K**: `gemini-3-pro-image-4k` (支持 `16:9`, `9:16`, `1x1`, `21:9`, `3:4`, `4:3`)
+- **标准 2K**: `gemini-3-pro-image-2k` (支持 `16:9`, `9:16`, `1x1`, `21:9`, `3:4`, `4:3`)
+- **普通分辨率**: `gemini-3-pro-image` (支持 `16:9`, `9:16`, `1x1`, `21:9`, `3:4`, `4:3`)
+
+### 🧪 实验性模型 (Experimental)
+- `o1-*` (OpenAI o1 系列)
+- `o3-*` (OpenAI o3 系列)
+- `internal-background-task`
+
