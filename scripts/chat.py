@@ -3,6 +3,15 @@ import os
 import json
 from pathlib import Path
 
+# 强制设置标准输出为 UTF-8，解决 Windows 乱码问题
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # 兼容旧版本 Python
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 # Add libs to path
 current_dir = Path(__file__).parent
 libs_path = current_dir.parent / "libs"

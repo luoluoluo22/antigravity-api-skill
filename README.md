@@ -13,12 +13,32 @@
 
 ### 1. 安装 Skill
 
-请在您的项目根目录下，打开终端 (Terminal) 运行以下命令：
+请根据你的编辑器，打开项目文件，打开终端 (Terminal) 运行以下命令：
+
+**🤖 Antigravity / Gemini Code Assist:**
 ```bash
 git clone https://github.com/luoluoluo22/antigravity-api-skill.git .agent/skills/antigravity-api-skill
 ```
 
+**🚀 Trae IDE:**
+```bash
+git clone https://github.com/luoluoluo22/antigravity-api-skill.git .trae/skills/antigravity-api-skill
+```
+
+**🧠 Claude Code:**
+```bash
+git clone https://github.com/luoluoluo22/antigravity-api-skill.git .claude/skills/antigravity-api-skill
+```
+
+**💻 Cursor / VSCode / 通用:**
+```bash
+# 通用方式：安装到根目录 include 列表
+git clone https://github.com/luoluoluo22/antigravity-api-skill.git skills/antigravity-api-skill
+```
 ### 2. 准备环境
+*   **安装 FFmpeg (重要)**: 视频分析功能依赖 FFmpeg 进行智能压缩。
+    *   **Windows**: 建议使用 `choco install ffmpeg` 或从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载并添加至环境变量。
+    *   **Mac**: `brew install ffmpeg`
 *   下载并运行 [Antigravity Tools](https://github.com/lbjlaq/Antigravity-Manager/releases)，并启动服务。
 *   **重要**：使用 Antigravity Tools 登录您的 **Google Pro** 账号。
     *   *提示*：Google Pro 账号可以在闲鱼购买，费用约为 80 元/年。

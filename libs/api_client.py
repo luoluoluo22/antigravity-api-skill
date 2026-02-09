@@ -26,121 +26,86 @@ class AntigravityClient:
             
     def _load_config(self):
         # [Fix] 支持 PyInstaller 打包后的路径
+        paths_to_check = []
         if getattr(sys, 'frozen', False):
-            # 1. 优先读取 EXE 同级目录下的 data/config.json (用户可配置)
             exe_dir = Path(sys.executable).parent
-            user_config = exe_dir / "data" / "config.json"
-            if user_config.exists():
-                try: 
-                    return json.loads(user_config.read_text(encoding='utf-8'))
-                except: pass
-            
-            # 2. 读取内部打包的资源 (如果配置了 _MEIPASS)
-            internal_config = Path(sys._MEIPASS) / "data" / "config.json"
-            if internal_config.exists():
-                try: return json.loads(internal_config.read_text(encoding='utf-8'))
-                except: pass
+            paths_to_check.append(exe_dir / "data" / "config.json")
+            if hasattr(sys, '_MEIPASS'):
+                paths_to_check.append(Path(sys._MEIPASS) / "data" / "config.json")
 
         current_dir = Path(__file__).parent
-        config_path = current_dir / "data" / "config.json"
-        
-        if not config_path.exists():
-            # 尝试在当前工作目录找
-            cwd_config = Path.cwd() / "data" / "config.json"
-            if cwd_config.exists():
-                config_path = cwd_config
-            else:
-                print(f"[-] Config not found at {config_path}", file=sys.stderr)
-                return {}
-            
-        try:
-            return json.loads(config_path.read_text(encoding='utf-8'))
-        except Exception as e:
-            print(f"[-] Error parsing config: {e}", file=sys.stderr)
-            return {}
+        paths_to_check.append(current_dir / "data" / "config.json")
+        paths_to_check.append(Path.cwd() / "data" / "config.json")
 
-    def _optimize_video(self, input_path):
+        # 增加对 example 配置的回退支持 (实现零配置启动)
+        paths_to_check.append(current_dir / "data" / "config.example.json")
+
+        for p in paths_to_check:
+            if p and p.exists():
+                try:
+                    config = json.loads(p.read_text(encoding='utf-8'))
+                    if p.name.endswith(".example.json"):
+                        print(f"[*] Config not found, using default template: {p.name}", file=sys.stderr)
+                    return config
+                except:
+                    continue
+
+        print(f"[-] Warning: No config or example found.", file=sys.stderr)
+        return {}
+
+    def _optimize_video(self, input_path, mute=False):
         """
         Use FFmpeg to compress large videos to a manageable size for AI.
         Target: 360P at low bitrate, keeping timing intact.
-        Saves to ./antigravity_cache to Allow reuse.
         """
         # Save to current working directory cache instead of temp
         cache_dir = Path("video_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Consistent naming for caching based on modification time and name
+
+        # Consistent naming for caching based on modification time, name and mute status
         mtime = int(os.path.getmtime(input_path))
         safe_name = os.path.basename(input_path).replace(" ", "_")
-        output_path = cache_dir / f"optimized_{mtime}_{safe_name}"
-        
+        mute_suffix = "_muted" if mute else ""
+        output_path = cache_dir / f"optimized_{mtime}{mute_suffix}_{safe_name}"
+
         if output_path.exists() and output_path.stat().st_size > 0:
-            print(f"[*] Using cached optimized video: {output_path}", file=sys.stderr)
+            if mute:
+                print(f"[*] 使用已缓存的压缩视频 (已静音): {output_path}", file=sys.stderr)
             return str(output_path)
-        
-        print(f"[*] Optimizing video for AI analysis: {os.path.basename(input_path)}...", file=sys.stderr)
-        
-        # FFmpeg command optimized for extreme compression + GPU (if available)
-        # Try to use NVIDIA GPU (h264_nvenc) first, fallback to CPU (libx264)
-        
-        common_filters = [
-            '-vf', 'scale=-2:360,fps=5', # Downscale to 360p, reduce FPS to 5
-            '-an', # Remove audio completely (optional: keep if audio analysis needed, but -an saves size)
-        ]
-        
-        # GPU Command (NVIDIA)
-        cmd_gpu = [
-            'ffmpeg', '-y', 
-            '-hwaccel', 'cuda', 
-            '-hwaccel_output_format', 'cuda',
-            '-i', input_path,
-            '-c:v', 'h264_nvenc', # Use NVIDIA Encoder
-            '-preset', 'p1',      # Fastest preset
-            '-qp', '35',          # Quality parameter (higher = lower quality)
-            '-vf', 'scale_cuda=-2:360,fps=5', # CUDA-accelerated scaling
-            '-an', 
-            str(output_path)
-        ]
-        
-        # CPU Command (Fallback)
-        cmd_cpu = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', 'scale=-2:360,fps=5',
-            '-vcodec', 'libx264', '-crf', '35', '-preset', 'ultrafast',
-            '-an', # Removing audio for visual analysis tasks to save huge space
-            str(output_path)
-        ]
+
+        print(f"[*] 正在为 AI 分析优化视频: {os.path.basename(input_path)}...", file=sys.stderr)
+        if mute:
+            print("[!] 提示：为了极速上传，本次压缩已移除音频数据。", file=sys.stderr)
+        else:
+            print("[*] 提示：正在尝试保留原声压缩，如上传过慢可尝试在指令中要求“静音分析”。", file=sys.stderr)
+
+        audio_opt = ['-an'] if mute else ['-c:a', 'aac', '-b:a', '64k']
 
         try:
-            print(f"[*] Starting Smart Compression (Target: 360p@5fps)...", file=sys.stderr)
-            
-            # Try GPU first
+            # 优先尝试 GPU 加速
             try:
-                print(f"[*] Attempting GPU acceleration (h264_nvenc) at 10fps...", file=sys.stderr)
-                simple_gpu_cmd = [
+                print(f"[*] 尝试硬件加速 (NVENC) 压缩...", file=sys.stderr)
+                gpu_cmd = [
                     'ffmpeg', '-y', '-i', input_path,
                     '-c:v', 'h264_nvenc', '-preset', 'fast', '-cq', '38',
-                    '-vf', 'scale=-2:360,fps=10', 
-                    '-an',
-                    str(output_path)
-                ]
-                subprocess.run(simple_gpu_cmd, stdout=subprocess.DEVNULL, check=True)
-            except Exception as e:
-                print(f"[-] GPU failed, switching to CPU (10fps compression): {e}", file=sys.stderr)
-                cmd_cpu_ultra = [
+                    '-vf', 'scale=-2:360,fps=10'
+                ] + audio_opt + [str(output_path)]
+                subprocess.run(gpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            except Exception:
+                # 回退到 CPU
+                print(f"[*] 硬件加速不可用，切换到 CPU (Ultrafast) 压缩...", file=sys.stderr)
+                cpu_cmd = [
                     'ffmpeg', '-y', '-i', input_path,
-                    '-vf', 'scale=-2:360,fps=10',
                     '-vcodec', 'libx264', '-crf', '35', '-preset', 'ultrafast',
-                    '-an',
-                    str(output_path)
-                ]
-                subprocess.run(cmd_cpu_ultra, stdout=subprocess.DEVNULL, check=True)
-            
+                    '-vf', 'scale=-2:360,fps=10'
+                ] + audio_opt + [str(output_path)]
+                subprocess.run(cpu_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
             new_size = os.path.getsize(output_path)
-            print(f"[+] Optimization complete: {new_size/1024/1024:.2f}MB", file=sys.stderr)
+            print(f"[+] 优化完成: {new_size/1024/1024:.2f}MB", file=sys.stderr)
             return str(output_path)
         except Exception as e:
-            print(f"[-] Optimization failed: {e}", file=sys.stderr)
+            print(f"[-] 优化失败 (FFmpeg 可能未安装或文件损坏): {e}", file=sys.stderr)
             return input_path # Fallback to original
 
     def upload_file(self, file_path):

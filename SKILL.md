@@ -1,15 +1,15 @@
 ---
-name: antigravity-skill
-description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4.5 文本生成, banana生图, 视频分析理解) 时使用此技能。
+name: antigravity-api-skill
+description: 当用户需要使用 Antigravity 反代出来的 API (Gemini 3 Flash,Gemini 3 pro, banana生图, 视频分析理解) 时使用此技能。
 ---
 
 # Antigravity Skill
 
 ## 目标
-利用 Antigravity API 网关提供的加强版 AI 能力，包括 **Gemini 3 Flash / Pro**, **Claude 3.5/3.7 Sonnet** 的高级文本生成与 **Gemini 3 Pro Image (Imagen 3)** 的 4K 绘图能力。
+利用 Antigravity API 网关提供的加强版 AI 能力，包括 **Gemini 3 Flash / Pro**文本生成与 **Gemini 3 Pro Image (Imagen 3)** 的 4K 绘图能力。
 
 ## 场景
-- **高级对话**: 使用 Gemini 3 或 Claude 3.7 进行复杂逻辑分析、脚本编写。
+- **高级对话**: 使用 Gemini 3 进行复杂逻辑分析、脚本编写。
 - **高清绘图**: 生成 16:9 4K 质量的视频素材、封面图 (优于普通绘图)。
 - **视频深度理解 (Vid2Text)**: 内置 **FFmpeg 智能压缩引擎**，支持 100MB+ 甚至 500MB+ 的超大视频。自动优化分辨率（480P）以在保留准确时间轴的前提下，实现极速上传与分析。
 - **批量素材处理**: 支持一次性喂入多个视频/图片素材。适用于分析全集剧情、对比视频色彩或批量生成解说词。
@@ -19,28 +19,28 @@ description: 当用户需要使用 Antigravity API (Gemini 3 Flash, Claude 3.7/4
 ### 首次使用配置指南
 本技能依赖本地运行的 **Antigravity Manager** 服务。首次使用请按以下步骤配置：
 
-1.  **下载并安装服务**:
-    *   前往项目地址下载最新版客户端: [Antigravity-Manager Releases](https://github.com/lbjlaq/Antigravity-Manager)
-    *   安装并启动 Windows 客户端。
+1.  **准备环境**:
+    *   **安装 FFmpeg (必填)**: 视频分析依赖它进行压缩。Windows 建议从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载。
+    *   **下载客户端**: [Antigravity-Manager Releases](https://github.com/lbjlaq/Antigravity-Manager/releases)
+    *   **重要**: 必须在客户端中登录您的 **Google Pro** 账号（可在闲鱼购买，约 80 元/年）。
 
 2.  **配置连接**:
-    *   确保本地服务已启动 (默认端口 `:8045` 或 `:8090`)。
-    *   **核心配置**: 配置文件位于 `libs/data/config.json`，脚本会自动读取此处的端口与 Key。
-    *   **Base URL**: `http://127.0.0.1:8090/v1` (如果修改过端口，请保持 config.json 一致)
-    *   **API Key**: `sk-antigravity` (默认) 或您自己在客户端设置的 Key。
+    *   **零配置启动**: 脚本会自动回退到 `config.example.json`，如果 Manager 使用默认设置（端口 8045），您可以直接开始使用，如果访问出错，尝试修改为8090，配置文件也需要同步修改。
+    *   **自定义配置**: 如需修改，请复制 `libs/data/config.example.json` 为 `config.json`。
+    *   **默认地址**: `http://127.0.0.1:845/v1`
 
 3.  **验证连接**:
-    *   运行指令 "查看所有模型" 来测试服务是否联通。
+    *   运行指令 "查看所有模型" 或 "/Antigravity 技能配置好了吗" 来测试。
 
 ## 指令
 
 ### 🗣️ 试试这样问 AI
-- **高级写作**: "请用 Claude 4.5 帮我写一个短视频脚本。"
+- **高级写作**: "请用 gemini-3-pro 帮我写一个短视频脚本。"
 - **高清绘图**: "用 banana 生成一张 16:9 的赛博朋克城市背景图。"
 - **参考生图**: "参考这张图 [绝对路径]，帮我画一个类似风格的饕餮巨兽。"
 - **视频理解**: "帮帮我分析下这个视频的内容：[视频路径]"
 - **查看模型**: "查看现在有哪些模型可以用。"
-- **推荐模型**: `gemini-3-pro` (视频理解首选), `gemini-3-flash`
+- **推荐模型**: `gemini-3-flash` (视频理解首选), `gemini-3-pro-high`
 
 ### 1. 对话与多模态 (Chat & Multimodal)
 **指令**: "请帮我写一段脚本..." / "分析这个视频: [视频路径]"
