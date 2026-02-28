@@ -15,10 +15,10 @@ s.trust_env = False
 
 
 class AntigravityClient:
-    def __init__(self):
+    def __init__(self, api_key=None, base_url=None):
         self.config = self._load_config()
-        self.base_url = self.config.get("base_url", "").rstrip("/")
-        self.api_key = self.config.get("api_key", "")
+        self.base_url = base_url or self.config.get("base_url", "").rstrip("/")
+        self.api_key = api_key or self.config.get("api_key", "")
         
         if not self.base_url or not self.api_key:
             print("[-] Error: Configuration missing base_url or api_key", file=sys.stderr)
@@ -66,7 +66,7 @@ class AntigravityClient:
         mtime = int(os.path.getmtime(input_path))
         safe_name = os.path.basename(input_path).replace(" ", "_")
         mute_suffix = "_muted" if mute else ""
-        output_path = cache_dir / f"optimized_{mtime}{mute_suffix}_{safe_name}"
+        output_path = cache_dir / f"optimized_{mtime}{mute_suffix}_{safe_name}.mp4"
 
         if output_path.exists() and output_path.stat().st_size > 0:
             if mute:
@@ -121,8 +121,12 @@ class AntigravityClient:
         mime_type, _ = mimetypes.guess_type(file_path)
         mime_type = mime_type or "application/octet-stream"
         
-        if file_path.lower().endswith(('.mp4', '.mov', '.webm')):
+        if file_path.lower().endswith(('.mp4', '.mov', '.webm', '.ts')):
             mime_type = mime_type if "video" in mime_type else "video/mp4"
+
+        # 安全处理文件名：Header 中不能包含非 ASCII 字符
+        from urllib.parse import quote
+        safe_file_name = quote(file_name)
 
         print(f"[*] Uploading {file_name} ({file_size/1024/1024:.2f}MB)...", file=sys.stderr)
         
@@ -138,7 +142,7 @@ class AntigravityClient:
                 # Mode 1: Multipart (Standard OpenAI compatible)
                 with open(file_path, "rb") as f:
                     files = {
-                        'file': (file_name, f, mime_type),
+                        'file': (safe_file_name, f, mime_type),
                         'purpose': (None, 'fine-tune')
                     }
                     headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -157,7 +161,7 @@ class AntigravityClient:
                 with open(file_path, "rb") as f:
                     headers = {
                         "Authorization": f"Bearer {self.api_key}",
-                        "X-File-Name": file_name,
+                        "X-File-Name": safe_file_name,
                         "X-File-Type": mime_type,
                         "Content-Type": "application/octet-stream"
                     }
@@ -193,7 +197,7 @@ class AntigravityClient:
             if not os.path.exists(path): continue
             
             # Smart optimization: if it's a video and > 10MB, compress it first
-            is_video = path.lower().endswith(('.mp4', '.mov', '.webm'))
+            is_video = path.lower().endswith(('.mp4', '.mov', '.webm', '.ts'))
             file_size = os.path.getsize(path)
             
             working_path = path
