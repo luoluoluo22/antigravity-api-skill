@@ -9,3 +9,5 @@ __pycache__/
 # Output
 output/
 generated_assets/
+video_cache/
+**/video_cache/
