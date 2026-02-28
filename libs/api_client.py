@@ -268,7 +268,7 @@ class AntigravityClient:
     def generate_image(self, prompt, size="1024x1024", image_path=None, quality="standard", n=1):
         # According to the provided SDK, images are generated via the /chat/completions endpoint
         url = f"{self.base_url}/chat/completions"
-        model = self.config.get("default_image_model", "gemini-3-pro-image")
+        model = "gemini-3.1-flash-image"
         
         messages = []
         if image_path and os.path.exists(image_path):
